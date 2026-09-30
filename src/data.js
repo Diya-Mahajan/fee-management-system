@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import * as XLSX from "xlsx";
 
 /* =========================================================
    COURSE DATA
@@ -339,7 +340,6 @@ export async function refreshPaymentsFromSupabase() {
     return [];
   }
 }
-
 /* =========================================================
    SAVE ALL PAYMENTS
 ========================================================= */
@@ -731,12 +731,12 @@ const LOGIN_KEY = "feeSystemCredentials";
 
 export const DEFAULT_CREDENTIALS = {
   teacher: {
-    username: "teacher",
-    password: "teacher123",
+    username: "Navpreet Kaur",
+    password: "nav@123",
   },
   sir: {
-    username: "sir",
-    password: "sir123",
+    username: "Pawan Grover",
+    password: "Pawan@123",
   },
 };
 
@@ -753,7 +753,33 @@ export function getCredentials() {
   }
 
   try {
-    return JSON.parse(saved);
+    const credentials = JSON.parse(saved);
+
+    // Migrate the old default credentials to the current credentials.
+    if (
+      credentials?.teacher?.username === "teacher" &&
+      credentials?.teacher?.password === "teacher123"
+    ) {
+      credentials.teacher = {
+        ...DEFAULT_CREDENTIALS.teacher
+      };
+    }
+
+    if (
+      credentials?.sir?.username === "sir" &&
+      credentials?.sir?.password === "sir123"
+    ) {
+      credentials.sir = {
+        ...DEFAULT_CREDENTIALS.sir
+      };
+    }
+
+    localStorage.setItem(
+      LOGIN_KEY,
+      JSON.stringify(credentials)
+    );
+
+    return credentials;
   } catch {
     localStorage.setItem(
       LOGIN_KEY,
@@ -769,4 +795,552 @@ export function saveCredentials(credentials) {
     LOGIN_KEY,
     JSON.stringify(credentials)
   );
+}
+
+/* =========================================================
+   EXCEL EXPORT
+   Only used when the user clicks "Export to Excel".
+   Reads the complete history directly from Supabase.
+========================================================= */
+
+export async function exportFeeDataToExcel() {
+  const [studentsResult, paymentsResult] =
+    await Promise.all([
+      supabase
+        .from("fee_students")
+        .select("*")
+        .order("updated_at", {
+          ascending: true
+        }),
+
+      supabase
+        .from("fee_payments")
+        .select("*")
+        .order("updated_at", {
+          ascending: true
+        }),
+    ]);
+
+  if (studentsResult.error) {
+    throw studentsResult.error;
+  }
+
+  if (paymentsResult.error) {
+    throw paymentsResult.error;
+  }
+
+  const students =
+    (studentsResult.data || [])
+      .map(row => row.data || {})
+      .filter(Boolean);
+
+  const payments =
+    (paymentsResult.data || [])
+      .map(row => row.data || {})
+      .filter(Boolean);
+
+  const approvedPayments =
+    payments.filter(
+      payment =>
+        payment.status === "approved"
+    );
+
+  const pendingPayments =
+    payments.filter(
+      payment =>
+        payment.status === "pending"
+    );
+
+  const rejectedPayments =
+    payments.filter(
+      payment =>
+        payment.status === "rejected"
+    );
+
+  const studentRows =
+    students.map(student => {
+      const studentPayments =
+        payments.filter(
+          payment =>
+            payment.studentId ===
+            student.studentId
+        );
+
+      const approvedPaid =
+        studentPayments
+          .filter(
+            payment =>
+              payment.status ===
+              "approved"
+          )
+          .reduce(
+            (sum, payment) =>
+              sum +
+              Number(
+                payment.amount || 0
+              ),
+            0
+          );
+
+      const pendingAmount =
+        studentPayments
+          .filter(
+            payment =>
+              payment.status ===
+              "pending"
+          )
+          .reduce(
+            (sum, payment) =>
+              sum +
+              Number(
+                payment.amount || 0
+              ),
+            0
+          );
+
+      const totalFee =
+        Number(
+          student.totalFee || 0
+        );
+
+      return {
+        "Student ID":
+          student.studentId ||
+          student.serialNumber ||
+          "",
+
+        "Student Name":
+          student.name || "",
+
+        "Father Name":
+          student.fatherName || "",
+
+        "Mother Name":
+          student.motherName || "",
+
+        "Department":
+          student.department || "",
+
+        "Course":
+          student.course || "",
+
+        "Phone":
+          student.phone || "",
+
+        "Alternate Phone":
+          student.alternatePhone ||
+          "",
+
+        "Email":
+          student.email || "",
+
+        "Address":
+          student.address || "",
+
+        "Qualification":
+          student.qualification || "",
+
+        "Duration":
+          student.duration || "",
+
+        "Fee Type":
+          student.feeType || "",
+
+        "Total Fee":
+          totalFee,
+
+        "Paid":
+          approvedPaid,
+
+        "Pending Approval":
+          pendingAmount,
+
+        "Balance":
+          Math.max(
+            0,
+            totalFee -
+              approvedPaid
+          ),
+
+        "Admission Date":
+          student.admissionDate ||
+          "",
+
+        "Diary Page Number":
+          student.diaryPageNumber ||
+          "",
+
+        "Notes":
+          student.notes || "",
+
+        "Created At":
+          student.createdAt || "",
+      };
+    });
+
+  const paymentRows =
+    payments.map(payment => ({
+      "Payment ID":
+        payment.paymentId ||
+        payment.payment_id ||
+        "",
+
+      "Student ID":
+        payment.studentId || "",
+
+      "Student Name":
+        payment.studentName || "",
+
+      "Course":
+        payment.course || "",
+
+      "Amount":
+        Number(
+          payment.amount || 0
+        ),
+
+      "Type":
+        payment.type || "",
+
+      "Status":
+        payment.status || "",
+
+      "Note":
+        payment.note || "",
+
+      "Submitted By":
+        payment.submittedBy || "",
+
+      "Submitted At":
+        payment.submittedAt || "",
+
+      "Approved By":
+        payment.approvedBy || "",
+
+      "Approved At":
+        payment.approvedAt || "",
+    }));
+
+  const approvedRows =
+    approvedPayments.map(
+      payment => ({
+        "Payment ID":
+          payment.paymentId ||
+          payment.payment_id ||
+          "",
+
+        "Student ID":
+          payment.studentId || "",
+
+        "Student Name":
+          payment.studentName || "",
+
+        "Course":
+          payment.course || "",
+
+        "Amount":
+          Number(
+            payment.amount || 0
+          ),
+
+        "Type":
+          payment.type || "",
+
+        "Submitted By":
+          payment.submittedBy || "",
+
+        "Submitted At":
+          payment.submittedAt || "",
+
+        "Approved By":
+          payment.approvedBy || "",
+
+        "Approved At":
+          payment.approvedAt || "",
+
+        "Note":
+          payment.note || "",
+      })
+    );
+
+  const pendingRows =
+    pendingPayments.map(
+      payment => ({
+        "Payment ID":
+          payment.paymentId ||
+          payment.payment_id ||
+          "",
+
+        "Student ID":
+          payment.studentId || "",
+
+        "Student Name":
+          payment.studentName || "",
+
+        "Course":
+          payment.course || "",
+
+        "Amount":
+          Number(
+            payment.amount || 0
+          ),
+
+        "Type":
+          payment.type || "",
+
+        "Submitted By":
+          payment.submittedBy || "",
+
+        "Submitted At":
+          payment.submittedAt || "",
+
+        "Note":
+          payment.note || "",
+      })
+    );
+
+  const rejectedRows =
+    rejectedPayments.map(
+      payment => ({
+        "Payment ID":
+          payment.paymentId ||
+          payment.payment_id ||
+          "",
+
+        "Student ID":
+          payment.studentId || "",
+
+        "Student Name":
+          payment.studentName || "",
+
+        "Course":
+          payment.course || "",
+
+        "Amount":
+          Number(
+            payment.amount || 0
+          ),
+
+        "Type":
+          payment.type || "",
+
+        "Status":
+          payment.status || "",
+
+        "Submitted By":
+          payment.submittedBy || "",
+
+        "Submitted At":
+          payment.submittedAt || "",
+
+        "Note":
+          payment.note || "",
+      })
+    );
+
+  const totalFees =
+    students.reduce(
+      (sum, student) =>
+        sum +
+        Number(
+          student.totalFee || 0
+        ),
+      0
+    );
+
+  const totalCollected =
+    approvedPayments.reduce(
+      (sum, payment) =>
+        sum +
+        Number(
+          payment.amount || 0
+        ),
+      0
+    );
+
+  const totalPending =
+    pendingPayments.reduce(
+      (sum, payment) =>
+        sum +
+        Number(
+          payment.amount || 0
+        ),
+      0
+    );
+
+  const summaryRows = [
+    {
+      "Summary":
+        "Total Students",
+      "Value":
+        students.length
+    },
+
+    {
+      "Summary":
+        "Total Payments",
+      "Value":
+        payments.length
+    },
+
+    {
+      "Summary":
+        "Approved Payments",
+      "Value":
+        approvedPayments.length
+    },
+
+    {
+      "Summary":
+        "Pending Payments",
+      "Value":
+        pendingPayments.length
+    },
+
+    {
+      "Summary":
+        "Rejected Payments",
+      "Value":
+        rejectedPayments.length
+    },
+
+    {
+      "Summary":
+        "Total Course Fees",
+      "Value":
+        totalFees
+    },
+
+    {
+      "Summary":
+        "Total Collected",
+      "Value":
+        totalCollected
+    },
+
+    {
+      "Summary":
+        "Pending Approval Amount",
+      "Value":
+        totalPending
+    },
+
+    {
+      "Summary":
+        "Remaining Balance",
+      "Value":
+        Math.max(
+          0,
+          totalFees -
+            totalCollected
+        )
+    },
+
+    {
+      "Summary":
+        "Exported At",
+      "Value":
+        new Date().toISOString()
+    },
+  ];
+
+  const workbook =
+    XLSX.utils.book_new();
+
+  const addSheet = (
+    name,
+    rows
+  ) => {
+    const sheet =
+      XLSX.utils.json_to_sheet(
+        rows.length
+          ? rows
+          : [
+              {
+                "No Data":
+                  "No records found"
+              }
+            ]
+      );
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      sheet,
+      name
+    );
+  };
+
+  addSheet(
+    "Students",
+    studentRows
+  );
+
+  addSheet(
+    "Payment History",
+    paymentRows
+  );
+
+  addSheet(
+    "Approved Payments",
+    approvedRows
+  );
+
+  addSheet(
+    "Pending Payments",
+    pendingRows
+  );
+
+  addSheet(
+    "Rejected Payments",
+    rejectedRows
+  );
+
+  addSheet(
+    "Fee Summary",
+    summaryRows
+  );
+    const completeHistory = payments.map(payment => {
+    const student = students.find(
+      item => item.studentId === payment.studentId
+    ) || {};
+
+    return {
+      "Payment ID": payment.paymentId || payment.payment_id || "",
+      "Student ID": payment.studentId || "",
+      "Student Name": payment.studentName || student.name || "",
+      "Father Name": student.fatherName || "",
+      "Department": student.department || "",
+      "Course": payment.course || student.course || "",
+      "Phone": student.phone || "",
+      "Total Fee": Number(student.totalFee || 0),
+      "Payment Amount": Number(payment.amount || 0),
+      "Payment Type": payment.type || "",
+      "Payment Status": payment.status || "",
+      "Submitted By": payment.submittedBy || "",
+      "Submitted At": payment.submittedAt || "",
+      "Approved By": payment.approvedBy || "",
+      "Approved At": payment.approvedAt || "",
+      "Note": payment.note || "",
+    };
+  });
+
+  addSheet("Complete History", completeHistory);
+
+  const today = new Date();
+
+  const date = `${today.getFullYear()}-${String(
+    today.getMonth() + 1
+  ).padStart(2, "0")}-${String(
+    today.getDate()
+  ).padStart(2, "0")}`;
+
+  XLSX.writeFile(
+    workbook,
+    `GROVER_PT_COLLEGE_Fee_History_${date}.xlsx`
+  );
+
+  return {
+    students: students.length,
+    payments: payments.length,
+  };
 }

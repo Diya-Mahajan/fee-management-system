@@ -12,7 +12,7 @@ import {
   COMPUTER_COURSES, DEPARTMENTS, OTHER_COURSES, getCategory,
   getToday, getStudents, saveStudents, getPayments, savePayments,
   generateStudentId, generatePaymentId, money,
-  getCredentials, saveCredentials
+  getCredentials, saveCredentials, exportFeeDataToExcel
 } from "./data";
 const SESSION_KEY = "feeSystemSession";
 
@@ -269,21 +269,18 @@ function Login() {
     e.preventDefault();
     setError("");
 
-    const enteredUsername = username.trim().toLowerCase();
+    const credentials = getCredentials();
+    const account = credentials[role];
 
-    const teacherLogin =
-      (enteredUsername === "navpreet kaur" || enteredUsername === "navpreet") &&
-      password === "nav@123";
-
-    const sirLogin =
-      (enteredUsername === "pawan grover" || enteredUsername === "pawan") &&
-      password === "Pawan@123";
-
-    const validLogin = role === "teacher" ? teacherLogin : sirLogin;
-
-    if (!validLogin) {
+    if (
+      !account ||
+      username.trim().toLowerCase() !== account.username.toLowerCase() ||
+      password !== account.password
+    ) {
       setError(
-        `Invalid ${role === "teacher" ? "teacher" : "sir"} username or password.`
+        `Invalid ${
+          role === "teacher" ? "teacher" : "sir"
+        } username or password.`
       );
       return;
     }
@@ -292,8 +289,7 @@ function Login() {
       SESSION_KEY,
       JSON.stringify({
         role,
-        username: role === "teacher" ? "navpreet kaur" : "pawan grover",
-        display_name: role === "teacher" ? "Navpreet Kaur" : "Pawan Grover",
+        username: account.username,
         loginAt: new Date().toISOString()
       })
     );
@@ -408,9 +404,7 @@ function Login() {
           type="submit"
           className="primary-btn full"
         >
-          Continue as{" "}
-          {role === "teacher" ? "Teacher" : "Sir"}
-
+          Continue as {role === "teacher" ? "Teacher" : "Sir"}
           <ArrowRight size={16} />
         </button>
 
@@ -2644,13 +2638,29 @@ function FeeSummary(){
       title="Fee Summary"
       subtitle="Sir Admin — complete student-wise fee position and approved collection"
       actions={
-        <button
-          className="ghost-btn"
-          onClick={()=>setTick(v=>v+1)}
-        >
-          <RefreshCw size={15}/>
-          Refresh
-        </button>
+        <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
+          <button
+            className="ghost-btn"
+            onClick={()=>setTick(v=>v+1)}
+          >
+            <RefreshCw size={15}/>
+            Refresh
+          </button>
+          <button
+            className="ghost-btn"
+            onClick={async()=>{
+              try {
+                await exportFeeDataToExcel();
+              } catch (error) {
+                console.error("Excel export error:", error);
+                alert("Excel export failed. Please try again.");
+              }
+            }}
+          >
+            <ReceiptText size={15}/>
+            Export to Excel
+          </button>
+        </div>
       }
     >
 
